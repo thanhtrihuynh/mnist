@@ -1,0 +1,143 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+<div class="page">
+    <header class="hero">
+        <div>
+            <div class="eyebrow">PYNQ-Z2 CNN ACCELERATOR</div>
+            <h1>MNIST Inference Dashboard</h1>
+            <p>Upload file, chọn sample hoặc vẽ số trực tiếp. Có thể lưu ảnh đã vẽ thành dataset theo thư mục nhãn 0–9.</p>
+        </div>
+
+        <div class="hero-actions">
+            <a class="btn btn-primary" href="/download/benchmark">Tải benchmark CSV</a>
+            <button id="btn-clear-cache" class="btn btn-outline" type="button">Load lại model/weights</button>
+        </div>
+    </header>
+
+    <main class="main-grid">
+        <section class="panel control-panel">
+            <div class="section-title">
+                <span class="badge">01</span>
+                <div>
+                    <h2>Nạp dữ liệu test</h2>
+                    <p>Chọn backend và dữ liệu đầu vào.</p>
+                </div>
+            </div>
+
+            <label>Backend suy luận</label>
+            <select id="backend">
+                {% for backend in backends %}
+                <option value="{{ backend }}" {% if backend == default_backend %}selected{% endif %}>{{ backend }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="backend-cards">
+                <div><strong>cpu_q12</strong><span>Golden model fixed-point</span></div>
+                <div><strong>cpu_float</strong><span>Keras .keras</span></div>
+                <div><strong>fpga_hls</strong><span>HLS bitstream</span></div>
+                <div><strong>fpga_rtl</strong><span>RTL bitstream</span></div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" data-tab="upload">Upload</button>
+                <button class="tab" data-tab="sample">Sample</button>
+                <button class="tab" data-tab="draw">Vẽ số</button>
+            </div>
+
+            <div id="tab-upload" class="tab-content active">
+                <form id="upload-form">
+                    <label>True label nếu biết</label>
+                    <input id="upload-true-label" name="true_label" type="number" min="0" max="9" placeholder="Ví dụ: 7">
+
+                    <label>File test</label>
+                    <input id="upload-file" name="file" type="file" accept=".txt,.csv,.mem,.png,.jpg,.jpeg,.bmp">
+
+                    <p class="hint">Hỗ trợ .txt/.csv/.mem chứa 784 số Q4.12 hoặc ảnh .png/.jpg. Ảnh sẽ được resize về 28 × 28.</p>
+
+                    <button class="btn btn-primary full" type="submit">Chạy dự đoán</button>
+                </form>
+            </div>
+
+            <div id="tab-sample" class="tab-content">
+                {% if sample_files %}
+                <label>Sample có sẵn</label>
+                <select id="sample-select">
+                    {% for item in sample_files %}
+                    <option value="{{ item.path }}">{{ item.kind }} | {{ item.name }}</option>
+                    {% endfor %}
+                </select>
+                <button id="btn-run-sample" class="btn btn-primary full" type="button">Chạy sample</button>
+                {% else %}
+                <p class="hint">Chưa có sample. Copy file vào <code>test_images/q12/</code> để hiện tại đây.</p>
+                {% endif %}
+            </div>
+
+            <div id="tab-draw" class="tab-content">
+                <label>True label nếu muốn kiểm tra đúng/sai</label>
+                <input id="draw-true-label" type="number" min="0" max="9" placeholder="Ví dụ: 5">
+
+                <div class="draw-wrap">
+                    <canvas id="draw-canvas" width="280" height="280"></canvas>
+                </div>
+
+                <div class="draw-actions">
+                    <button id="btn-clear-draw" class="btn btn-outline" type="button">Xóa</button>
+                    <button id="btn-predict-draw" class="btn btn-primary" type="button">Dự đoán số vẽ</button>
+                </div>
+
+                <button id="btn-save-draw" class="btn btn-save full" type="button">Lưu ảnh vẽ vào dataset</button>
+
+                <p class="hint">
+                    Vẽ bằng chuột: nền đen, nét trắng. Khi lưu, web tạo ảnh 28×28 vào
+                    <code>draw_dataset/&lt;label&gt;/</code> và ảnh raw vào
+                    <code>draw_dataset_raw/&lt;label&gt;/</code>.
+                </p>
+            </div>
+        </section>
+
+        <section class="panel result-panel">
+            <div class="section-title">
+                <span class="badge">02</span>
+                <div>
+                    <h2>Kết quả dự đoán</h2>
+                    <p>Logits, Top-1, Top-2, margin và thông số hiệu năng.</p>
+                </div>
+            </div>
+
+            <div class="result-top">
+                <div class="big-card">
+                    <span>Predicted digit</span>
+                    <strong id="predicted-label">-</strong>
+                </div>
+                <div class="big-card">
+                    <span>Backend</span>
+                    <strong id="backend-used">-</strong>
+                </div>
+            </div>
+
+            <div class="metric-grid">
+                <div class="metric"><span>True label</span><strong id="true-label">-</strong></div>
+                <div class="metric"><span>Correct</span><strong id="correct">-</strong></div>
+                <div class="metric"><span>Latency</span><strong id="latency">-</strong></div>
+                <div class="metric"><span>Throughput</span><strong id="throughput">-</strong></div>
+                <div class="metric"><span>Input range</span><strong id="input-range">-</strong></div>
+            </div>
+
+            <div class="topk-grid">
+                <div class="metric highlight"><span>Top-1 class</span><strong id="top1-class">-</strong><small id="top1-logit">-</small></div>
+                <div class="metric highlight"><span>Top-2 class</span><strong id="top2-class">-</strong><small id="top2-logit">-</small></div>
+                <div class="metric highlight"><span>Margin</span><strong id="margin">-</strong><small>Top-1 logit − Top-2 logit</small></div>
+            </div>
+
+            <div class="chart-box">
+                <canvas id="logits-chart"></canvas>
+            </div>
+
+            <div class="note" id="note">Chưa có kết quả.</div>
+        </section>
+    </main>
+</div>
+
+{% endblock %}
